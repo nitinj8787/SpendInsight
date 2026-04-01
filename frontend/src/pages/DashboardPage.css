@@ -1,0 +1,139 @@
+.dashboard-page {
+  max-width: 1000px;
+  margin: 2rem auto;
+  padding: 0 1rem;
+}
+
+.dashboard-page h1 {
+  font-size: 1.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.dashboard-loading,
+.dashboard-error {
+  max-width: 1000px;
+  margin: 4rem auto;
+  padding: 0 1rem;
+  font-size: 1rem;
+}
+
+.dashboard-error {
+  color: #991b1b;
+}
+
+/* Summary stat cards */
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.stat-card {
+  border-radius: 8px;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.stat-card.green {
+  background-color: #dcfce7;
+  border: 1px solid #86efac;
+}
+
+.stat-card.red {
+  background-color: #fee2e2;
+  border: 1px solid #fca5a5;
+}
+
+.stat-label {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #555;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+
+/* Section headings */
+.dashboard-section {
+  margin-bottom: 2.5rem;
+}
+
+.dashboard-section h2 {
+  font-size: 1.2rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  padding-bottom: 0.5rem;
+}
+
+/* Category list */
+.category-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.category-item {
+  display: flex;
+  justify-content: space-between;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.6rem 1rem;
+}
+
+.category-name {
+  text-transform: capitalize;
+  font-weight: 500;
+}
+
+/* Tables */
+.trends-table,
+.transactions-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.trends-table th,
+.trends-table td,
+.transactions-table th,
+.transactions-table td {
+  text-align: left;
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.trends-table th,
+.transactions-table th {
+  background-color: #f3f4f6;
+  font-weight: 600;
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.amount-positive {
+  color: #166534;
+}
+
+.amount-negative {
+  color: #991b1b;
+}
+
+.empty-state {
+  color: #6b7280;
+  font-size: 0.95rem;
+}
+
+.empty-state a {
+  color: #646cff;
+}
