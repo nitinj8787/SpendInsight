@@ -6,6 +6,9 @@ from typing import Optional
 import pandas as pd
 
 from app.schemas.transaction import TransactionCreate
+from app.services.categorizer import TransactionCategorizer
+
+_categorizer = TransactionCategorizer()
 
 # ---------------------------------------------------------------------------
 # Bank format definitions
@@ -178,7 +181,11 @@ def parse_csv(content: bytes) -> list[TransactionCreate]:
                 source = raw_source
 
             raw_category = str(row.get("category", "")).strip()
-            category = raw_category if raw_category else "uncategorized"
+            if raw_category:
+                category = raw_category
+            else:
+                description_val = str(row["description"]).strip()
+                category = _categorizer.categorize(description_val)
 
             transactions.append(
                 TransactionCreate(

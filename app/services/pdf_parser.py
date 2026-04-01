@@ -6,6 +6,9 @@ from decimal import Decimal, InvalidOperation
 import pdfplumber
 
 from app.schemas.transaction import TransactionCreate
+from app.services.categorizer import TransactionCategorizer
+
+_categorizer = TransactionCategorizer()
 
 # ---------------------------------------------------------------------------
 # Regex patterns for field identification
@@ -174,7 +177,8 @@ def _extract_row(row: list, col_map: dict[str, int]) -> TransactionCreate:
         txn_type = "income"
 
     source = _get("source") or "pdf"
-    category = _get("category") or "uncategorized"
+    raw_category = _get("category")
+    category = raw_category if raw_category else _categorizer.categorize(description)
 
     return TransactionCreate(
         date=parsed_date,

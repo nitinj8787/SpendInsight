@@ -116,7 +116,7 @@ def test_barclays_expense_row():
     assert t.amount == Decimal("75.50")
     assert t.type == "expense"
     assert t.source == "barclays"
-    assert t.category == "uncategorized"
+    assert t.category == "shopping"
 
 
 def test_barclays_income_row():
@@ -213,7 +213,7 @@ def test_amex_basic_row():
     assert t.amount == Decimal("75.50")
     assert t.type == "income"   # positive amount -> income
     assert t.source == "amex"
-    assert t.category == "uncategorized"
+    assert t.category == "shopping"
 
 
 def test_amex_refund_row():

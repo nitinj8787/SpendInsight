@@ -194,7 +194,7 @@ def test_extract_row_expense_from_negative_amount():
     assert t.amount == Decimal("12.99")
     assert t.type == "expense"
     assert t.source == "pdf"
-    assert t.category == "uncategorized"
+    assert t.category == "entertainment"
 
 
 def test_extract_row_income_from_positive_amount():
@@ -308,7 +308,7 @@ def test_parse_pdf_defaults_source_and_category():
         txns = parse_pdf(b"fake pdf")
 
     assert txns[0].source == "pdf"
-    assert txns[0].category == "uncategorized"
+    assert txns[0].category == "shopping"
 
 
 def test_parse_pdf_infers_columns_without_header():
