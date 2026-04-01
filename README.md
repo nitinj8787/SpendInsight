@@ -29,7 +29,11 @@ tests/
 
 ## Getting Started
 
+Python version: 3.14
+
 ```bash
+py -3.14 -m venv .venv
+./.venv/Scripts/activate
 pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
