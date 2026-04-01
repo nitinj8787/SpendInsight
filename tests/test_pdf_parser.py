@@ -75,13 +75,22 @@ def test_parse_date_empty_returns_none():
     assert _parse_date("") is None
 
 
+def _expected_year(month: int, day: int) -> int:
+    """Return the year that _parse_date should assign for a no-year date."""
+    today = datetime.date.today()
+    candidate = datetime.date(today.year, month, day)
+    if candidate > today + datetime.timedelta(days=31):
+        return today.year - 1
+    return today.year
+
+
 def test_parse_date_dd_mmm_no_year():
-    """'04 Oct' style dates (no year) should use the current calendar year."""
+    """'04 Oct' style dates (no year) should resolve to the most recent past occurrence."""
     result = _parse_date("04 Oct")
     assert result is not None
     assert result.month == 10
     assert result.day == 4
-    assert result.year == datetime.date.today().year
+    assert result.year == _expected_year(10, 4)
 
 
 def test_parse_date_dd_mmm_no_year_single_digit_day():
@@ -89,7 +98,7 @@ def test_parse_date_dd_mmm_no_year_single_digit_day():
     assert result is not None
     assert result.month == 10
     assert result.day == 4
-    assert result.year == datetime.date.today().year
+    assert result.year == _expected_year(10, 4)
 
 
 # ---------------------------------------------------------------------------
@@ -558,7 +567,11 @@ def test_parse_pdf_money_out_money_in_columns():
 
 
 def test_parse_pdf_dd_mmm_date_without_year():
-    """Dates in 'DD MMM' format (no year) should parse using the current year."""
+    """Dates in 'DD MMM' format (no year) should resolve to the most recent past occurrence."""
+    today = datetime.date.today()
+    candidate = datetime.date(today.year, 10, 10)
+    expected_year = today.year - 1 if candidate > today + datetime.timedelta(days=31) else today.year
+
     table = [
         ["Date", "Description", "Money out", "Money in", "Balance"],
         ["10 Oct", "Direct Debit to L&G Insurance MI", "18.07", "", "9,506.63"],
@@ -569,7 +582,7 @@ def test_parse_pdf_dd_mmm_date_without_year():
     assert len(txns) == 1
     assert txns[0].date.month == 10
     assert txns[0].date.day == 10
-    assert txns[0].date.year == datetime.date.today().year
+    assert txns[0].date.year == expected_year
 
 
 def test_parse_pdf_start_balance_row_skipped():
@@ -738,3 +751,32 @@ def test_parse_pdf_barclays_full_statement_sample():
     thames_txn = next(t for t in txns if "Thames Water" in t.description)
     assert sky_txn.date == thames_txn.date
     assert sky_txn.date.day == 6
+
+
+
+def test_parse_pdf_barclays_legend_row_before_header():
+    """Barclays tables start with a 'Giro DD Direct Debit Online' legend row.
+
+    When pdfplumber includes that row in the extracted table it must NOT
+    cause the entire table to be abandoned.  The parser should skip the
+    legend row, consume the real column-header row, and then process all
+    data rows normally.
+    """
+    table = [
+        ["Giro Bank Giro", "DD Direct Debit", "Online", None, None],  # legend
+        ["Date", "Description", "Money out", "Money in", "Balance"],   # header
+        ["04 Oct", "Start balance", "", "", "9,629.70"],                # balance (skip)
+        ["06 Oct", "Direct Debit to Sky Digital", "38.00", "", "9,591.70"],
+        ["", "Ref: 00624749531452", "", "", ""],
+        ["14 Oct", "Received From Employer", "", "2,500.00", "12,091.70"],
+    ]
+    with patch("pdfplumber.open", return_value=_mock_pdf([[table]])):
+        txns = parse_pdf(b"fake pdf")
+
+    assert len(txns) == 2
+    assert txns[0].description == "Direct Debit to Sky Digital"
+    assert txns[0].type == "expense"
+    assert txns[0].amount == Decimal("38.00")
+    assert txns[1].description == "Received From Employer"
+    assert txns[1].type == "income"
+    assert txns[1].amount == Decimal("2500.00")

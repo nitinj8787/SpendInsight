@@ -207,11 +207,16 @@ class TestBarclaysPDFParser:
         assert txns[0].amount > 0
 
     def test_date_uses_current_year(self):
+        today = datetime.date.today()
+        # "06 Oct" → Oct 6 in the appropriate year (previous year if > 31 days away)
+        candidate = datetime.date(today.year, 10, 6)
+        expected_year = today.year - 1 if candidate > today + datetime.timedelta(days=31) else today.year
+
         text = "06 Oct  DIRECT DEBIT  38.00 DR\n"
         parser = BarclaysPDFParser()
         with patch("pdfplumber.open", return_value=_make_text_pdf(text)):
             txns = parser.parse(b"fake")
-        assert txns[0].date.year == datetime.date.today().year
+        assert txns[0].date.year == expected_year
 
     def test_missing_date_line_uses_previous_date(self):
         """Continuation transactions without a date header get the last date."""

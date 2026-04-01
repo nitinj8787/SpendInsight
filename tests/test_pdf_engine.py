@@ -465,6 +465,10 @@ def test_fallback_iso_date_format():
 
 
 def test_fallback_dd_mmm_date_without_year():
+    today = datetime.date.today()
+    candidate = datetime.date(today.year, 10, 14)
+    expected_year = today.year - 1 if candidate > today + datetime.timedelta(days=31) else today.year
+
     text = "14 Oct  British Gas  45.00\n"
     parser = FallbackAIParser()
     with patch("pdfplumber.open", return_value=_make_fallback_pdf(text)):
@@ -472,7 +476,7 @@ def test_fallback_dd_mmm_date_without_year():
     assert len(txns) == 1
     assert txns[0].date.month == 10
     assert txns[0].date.day == 14
-    assert txns[0].date.year == datetime.date.today().year
+    assert txns[0].date.year == expected_year
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +501,39 @@ def test_parse_date_str_dd_mmm_no_year():
     assert result is not None
     assert result.month == 10
     assert result.day == 4
+
+
+def test_parse_date_str_dd_mmm_no_year_resolves_to_past():
+    """Year-less dates far in the future should use the previous year.
+
+    Simulates uploading an Oct/Nov 2025 Barclays statement in April 2026:
+    without the past-year heuristic every transaction would be stored with
+    year 2026 instead of 2025.
+    """
+    today = datetime.date.today()
+    # Build a date that is definitely > 31 days in the future using the current year.
+    future_month = ((today.month + 5) % 12) or 12
+    future_day = 15
+    # Ensure the chosen month/day is actually > 31 days away.
+    try:
+        candidate = datetime.date(today.year, future_month, future_day)
+    except ValueError:
+        future_day = 1
+        candidate = datetime.date(today.year, future_month, future_day)
+
+    if candidate <= today + datetime.timedelta(days=31):
+        # This combination happens to be within 31 days — skip the assertion
+        # to avoid a date-sensitive false failure rather than asserting wrong.
+        return
+
+    date_str = f"{candidate.day} {candidate.strftime('%b')}"  # e.g. "15 Oct"
+    result = _parse_date_str(date_str)
+    assert result is not None
+    assert result.month == future_month
+    assert result.day == future_day
+    assert result.year == today.year - 1, (
+        f"Expected year {today.year - 1} for future date {date_str!r}, got {result.year}"
+    )
 
 
 def test_parse_date_str_invalid_returns_none():

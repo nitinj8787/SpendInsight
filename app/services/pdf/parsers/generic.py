@@ -72,10 +72,11 @@ def _parse_date(value: str) -> datetime.date | None:
     """Try to parse *value* as a date using known regex-backed formats.
 
     Returns a :class:`datetime.date` on success, or ``None`` if no pattern
-    matches.  For formats that carry no year (e.g. "04 Oct") the current
-    calendar year is substituted.  Note: this heuristic may be inaccurate
-    for statements that span a year boundary (e.g. a December transaction
-    on a statement fetched in January of the following year).
+    matches.  For formats that carry no year (e.g. "04 Oct") the most-recent
+    past occurrence is used: the current calendar year is tried first; if the
+    resulting date is more than 31 days in the future (typical when uploading
+    an old bank statement months after the statement period), the previous
+    year is used instead.
     """
     value = value.strip()
     for pattern, fmt in _DATE_PATTERNS:
@@ -83,8 +84,14 @@ def _parse_date(value: str) -> datetime.date | None:
             try:
                 parsed = datetime.datetime.strptime(value, fmt)
                 if parsed.year == 1900:
-                    # strptime default when no year present; use current year
-                    parsed = parsed.replace(year=datetime.date.today().year)
+                    # strptime default when no year present — infer the year.
+                    today = datetime.date.today()
+                    parsed = parsed.replace(year=today.year)
+                    # If the candidate date is more than ~31 days in the future
+                    # it almost certainly belongs to the previous calendar year
+                    # (e.g. an Oct 2025 statement uploaded in April 2026).
+                    if parsed.date() > today + datetime.timedelta(days=31):
+                        parsed = parsed.replace(year=parsed.year - 1)
                 return parsed.date()
             except ValueError:
                 continue
@@ -350,14 +357,22 @@ def _parse_tables(
                         col_map = _classify_columns(header_row, row)
                         has_amount = {"amount", "debit", "credit"}.intersection(col_map)
                         if not ({"date", "description"}.issubset(col_map) and has_amount):
-                            # Cannot identify all required columns; skip table.
+                            # This row does not carry enough information to
+                            # establish a column mapping.  It may be a legend /
+                            # badge row that precedes the real column-header row
+                            # (e.g. Barclays prints "Giro  DD Direct Debit
+                            # Online" as the first physical row of the table).
+                            # Reset and try the next row instead of giving up
+                            # on the whole table.
+                            col_map = None
                             logger.debug(
-                                "Page %d: skipping table — required columns not identified "
-                                "(found: %s)",
+                                "Page %d row %d: cannot identify columns yet "
+                                "(found: %s) — skipping row",
                                 page_num,
-                                list(col_map.keys()),
+                                row_num + 1,
+                                list(_classify_columns(header_row, row).keys()),
                             )
-                            break
+                            continue
 
                     # Skip opening/closing balance rows.
                     if _is_balance_row(row, col_map):

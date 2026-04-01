@@ -134,7 +134,10 @@ def _parse_date_str(value: str) -> "datetime.date | None":
         try:
             parsed = datetime.datetime.strptime(value, fmt)
             if parsed.year == 1900:
-                parsed = parsed.replace(year=datetime.date.today().year)
+                today = datetime.date.today()
+                parsed = parsed.replace(year=today.year)
+                if parsed.date() > today + datetime.timedelta(days=31):
+                    parsed = parsed.replace(year=parsed.year - 1)
             return parsed.date()
         except ValueError:
             continue

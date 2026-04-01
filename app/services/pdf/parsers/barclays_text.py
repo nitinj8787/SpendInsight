@@ -76,13 +76,23 @@ _DATE_FORMATS = ["%d %b", "%d %B"]
 
 
 def _parse_barclays_date(value: str) -> datetime.date | None:
-    """Parse a Barclays ``DD Mon`` (or ``DD Month``) date string."""
+    """Parse a Barclays ``DD Mon`` (or ``DD Month``) date string.
+
+    When no year is present the most-recent past occurrence is used: the
+    current calendar year is tried first; if the result would be more than
+    31 days in the future (typical when uploading an old statement) the
+    previous year is substituted instead.
+    """
     value = value.strip()
     for fmt in _DATE_FORMATS:
         try:
             parsed = datetime.datetime.strptime(value, fmt)
-            # strptime uses 1900 when no year is given — replace with current.
-            return parsed.replace(year=datetime.date.today().year).date()
+            # strptime uses 1900 when no year is given — infer the year.
+            today = datetime.date.today()
+            parsed = parsed.replace(year=today.year)
+            if parsed.date() > today + datetime.timedelta(days=31):
+                parsed = parsed.replace(year=parsed.year - 1)
+            return parsed.date()
         except ValueError:
             continue
     return None
