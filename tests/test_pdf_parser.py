@@ -9,6 +9,7 @@ import pytest
 from app.services.pdf_parser import (
     _classify_columns,
     _extract_row,
+    _is_balance_row,
     _is_header_row,
     _parse_amount,
     _parse_date,
@@ -71,6 +72,23 @@ def test_parse_date_invalid_returns_none():
 
 def test_parse_date_empty_returns_none():
     assert _parse_date("") is None
+
+
+def test_parse_date_dd_mmm_no_year():
+    """'04 Oct' style dates (no year) should use the current calendar year."""
+    result = _parse_date("04 Oct")
+    assert result is not None
+    assert result.month == 10
+    assert result.day == 4
+    assert result.year == datetime.date.today().year
+
+
+def test_parse_date_dd_mmm_no_year_single_digit_day():
+    result = _parse_date("4 Oct")
+    assert result is not None
+    assert result.month == 10
+    assert result.day == 4
+    assert result.year == datetime.date.today().year
 
 
 # ---------------------------------------------------------------------------
@@ -154,11 +172,23 @@ def test_classify_columns_inferred_from_data():
     assert mapping["amount"] == 2
 
 
-def test_classify_columns_inferred_negative_amount():
-    mapping = _classify_columns(None, ["2024-03-15", "Netflix", "-12.99"])
+def test_classify_columns_money_out_money_in():
+    """'Money out' / 'Money in' headers must be recognised as debit/credit."""
+    header = ["Date", "Description", "Money out", "Money in", "Balance"]
+    data = ["04 Oct", "Direct Debit to Sky", "38.00", "", "9,524.70"]
+    mapping = _classify_columns(header, data)
     assert mapping["date"] == 0
     assert mapping["description"] == 1
-    assert mapping["amount"] == 2
+    assert mapping["debit"] == 2
+    assert mapping["credit"] == 3
+
+
+def test_classify_columns_debit_credit_headers():
+    header = ["date", "description", "debit", "credit"]
+    data = ["2024-03-15", "Payment", "50.00", ""]
+    mapping = _classify_columns(header, data)
+    assert mapping["debit"] == 2
+    assert mapping["credit"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -180,6 +210,35 @@ def test_is_header_row_false_for_data_row():
 
 def test_is_header_row_false_for_empty():
     assert not _is_header_row([])
+
+
+# ---------------------------------------------------------------------------
+# _is_balance_row
+# ---------------------------------------------------------------------------
+
+
+def test_is_balance_row_start_balance():
+    col_map = {"date": 0, "description": 1, "debit": 2, "credit": 3}
+    row = ["04 Oct", "Start balance", "", "9629.70"]
+    assert _is_balance_row(row, col_map)
+
+
+def test_is_balance_row_opening_balance():
+    col_map = {"date": 0, "description": 1, "amount": 2}
+    row = ["2024-03-01", "Opening balance", "5000.00"]
+    assert _is_balance_row(row, col_map)
+
+
+def test_is_balance_row_closing_balance():
+    col_map = {"date": 0, "description": 1, "amount": 2}
+    row = ["2024-03-31", "Closing balance", "4200.00"]
+    assert _is_balance_row(row, col_map)
+
+
+def test_is_balance_row_false_for_normal_transaction():
+    col_map = {"date": 0, "description": 1, "amount": 2}
+    row = ["2024-03-15", "Direct Debit to Sky", "38.00"]
+    assert not _is_balance_row(row, col_map)
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +296,38 @@ def test_extract_row_empty_description_raises():
     col_map = {"date": 0, "description": 1, "amount": 2}
     with pytest.raises(ValueError, match="Description is empty"):
         _extract_row(["2024-03-15", "", "12.99"], col_map)
+
+
+def test_extract_row_debit_column_is_expense():
+    col_map = {"date": 0, "description": 1, "debit": 2, "credit": 3}
+    row = ["04 Oct", "Direct Debit to Sky", "38.00", ""]
+    t = _extract_row(row, col_map)
+    assert t.amount == Decimal("38.00")
+    assert t.type == "expense"
+
+
+def test_extract_row_credit_column_is_income():
+    col_map = {"date": 0, "description": 1, "debit": 2, "credit": 3}
+    row = ["04 Oct", "Received From Danbro Employment", "", "7726.72"]
+    t = _extract_row(row, col_map)
+    assert t.amount == Decimal("7726.72")
+    assert t.type == "income"
+
+
+def test_extract_row_fallback_date_used_when_date_empty():
+    fallback = datetime.date(2025, 10, 6)
+    col_map = {"date": 0, "description": 1, "debit": 2, "credit": 3}
+    row = ["", "Direct Debit to Thames Water", "67.00", ""]
+    t = _extract_row(row, col_map, fallback_date=fallback)
+    assert t.date == fallback
+    assert t.amount == Decimal("67.00")
+    assert t.type == "expense"
+
+
+def test_extract_row_empty_date_no_fallback_raises():
+    col_map = {"date": 0, "description": 1, "amount": 2}
+    with pytest.raises(ValueError, match="Cannot parse date"):
+        _extract_row(["", "Netflix", "12.99"], col_map)
 
 
 # ---------------------------------------------------------------------------
@@ -438,3 +529,71 @@ def test_parse_pdf_amount_with_thousands_comma():
         txns = parse_pdf(b"fake pdf")
 
     assert txns[0].amount == Decimal("1200.00")
+
+
+def test_parse_pdf_money_out_money_in_columns():
+    """Bank statements with separate 'Money out' / 'Money in' columns."""
+    table = [
+        ["Date", "Description", "Money out", "Money in", "Balance"],
+        ["04 Oct", "Start balance", "", "", "9,629.70"],
+        ["06 Oct", "Direct Debit to Sky Digital", "38.00", "", "9,591.70"],
+        ["06 Oct", "Direct Debit to Thames Water", "67.00", "", "9,524.70"],
+        ["14 Oct", "Received From Danbro Employment", "", "7,726.72", "16,823.36"],
+    ]
+    with patch("pdfplumber.open", return_value=_mock_pdf([[table]])):
+        txns = parse_pdf(b"fake pdf")
+
+    # "Start balance" row is skipped
+    assert len(txns) == 3
+    assert txns[0].description == "Direct Debit to Sky Digital"
+    assert txns[0].amount == Decimal("38.00")
+    assert txns[0].type == "expense"
+    assert txns[1].description == "Direct Debit to Thames Water"
+    assert txns[1].amount == Decimal("67.00")
+    assert txns[1].type == "expense"
+    assert txns[2].description == "Received From Danbro Employment"
+    assert txns[2].amount == Decimal("7726.72")
+    assert txns[2].type == "income"
+
+
+def test_parse_pdf_dd_mmm_date_without_year():
+    """Dates in 'DD MMM' format (no year) should parse using the current year."""
+    table = [
+        ["Date", "Description", "Money out", "Money in", "Balance"],
+        ["10 Oct", "Direct Debit to L&G Insurance MI", "18.07", "", "9,506.63"],
+    ]
+    with patch("pdfplumber.open", return_value=_mock_pdf([[table]])):
+        txns = parse_pdf(b"fake pdf")
+
+    assert len(txns) == 1
+    assert txns[0].date.month == 10
+    assert txns[0].date.day == 10
+    assert txns[0].date.year == datetime.date.today().year
+
+
+def test_parse_pdf_start_balance_row_skipped():
+    """Opening-balance rows must be silently skipped."""
+    table = [
+        ["Date", "Description", "Money out", "Money in", "Balance"],
+        ["04 Oct", "Start balance", "", "", "9,629.70"],
+        ["06 Oct", "Direct Debit to Sky Digital", "38.00", "", "9,591.70"],
+    ]
+    with patch("pdfplumber.open", return_value=_mock_pdf([[table]])):
+        txns = parse_pdf(b"fake pdf")
+
+    assert len(txns) == 1
+    assert txns[0].description == "Direct Debit to Sky Digital"
+
+
+def test_parse_pdf_date_carried_forward_for_continuation_rows():
+    """Rows with an empty date cell reuse the date from the previous row."""
+    table = [
+        ["Date", "Description", "Money out", "Money in", "Balance"],
+        ["06 Oct", "Direct Debit to Sky Digital", "38.00", "", ""],
+        ["", "Direct Debit to Thames Water", "67.00", "", "9,524.70"],
+    ]
+    with patch("pdfplumber.open", return_value=_mock_pdf([[table]])):
+        txns = parse_pdf(b"fake pdf")
+
+    assert len(txns) == 2
+    assert txns[1].date == txns[0].date
