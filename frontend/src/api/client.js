@@ -9,6 +9,8 @@ const client = axios.create({
 
 export const getTransactions = () => client.get('/transactions/');
 
+export const deleteAllTransactions = () => client.delete('/transactions/');
+
 export const getAnalytics = () => client.get('/analytics/');
 
 export const uploadFile = (file) => {

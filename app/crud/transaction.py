@@ -43,3 +43,11 @@ def delete_transaction(db: Session, transaction_id: int) -> Optional[Transaction
     db.delete(db_transaction)
     db.commit()
     return db_transaction
+
+
+def delete_all_transactions(db: Session) -> int:
+    """Delete every transaction row and return the count of deleted records."""
+    count = db.query(Transaction).count()
+    db.query(Transaction).delete()
+    db.commit()
+    return count

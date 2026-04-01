@@ -18,6 +18,13 @@ def create_transaction(transaction: TransactionCreate, db: Session = Depends(get
     return crud.transaction.create_transaction(db, transaction)
 
 
+@router.delete("/", status_code=status.HTTP_200_OK)
+def delete_all_transactions(db: Session = Depends(get_db)):
+    """Delete every transaction.  Returns the number of deleted records."""
+    count = crud.transaction.delete_all_transactions(db)
+    return {"deleted": count}
+
+
 @router.get("/{transaction_id}", response_model=TransactionResponse)
 def get_transaction(transaction_id: int, db: Session = Depends(get_db)):
     db_transaction = crud.transaction.get_transaction(db, transaction_id)

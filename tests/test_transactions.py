@@ -115,3 +115,19 @@ def test_delete_transaction(client):
 def test_delete_transaction_not_found(client):
     response = client.delete("/transactions/9999")
     assert response.status_code == 404
+
+
+def test_delete_all_transactions(client):
+    client.post("/transactions/", json=SAMPLE_TRANSACTION)
+    client.post("/transactions/", json={**SAMPLE_TRANSACTION, "description": "Second transaction"})
+    response = client.delete("/transactions/")
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 2
+    list_response = client.get("/transactions/")
+    assert list_response.json() == []
+
+
+def test_delete_all_transactions_empty_db(client):
+    response = client.delete("/transactions/")
+    assert response.status_code == 200
+    assert response.json()["deleted"] == 0
