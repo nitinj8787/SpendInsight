@@ -200,6 +200,27 @@ def _is_balance_row(row: list, col_map: dict[str, int]) -> bool:
     return False
 
 
+def _row_has_amount(row: list, col_map: dict[str, int]) -> bool:
+    """Return True if *row* has at least one non-empty amount cell.
+
+    This is used to skip continuation / reference rows (e.g. Barclays
+    "Ref: xxxxxxxx" sub-rows) that appear between transaction rows and
+    carry no monetary value.  Such rows have an empty debit **and** credit
+    cell (or an empty amount cell for single-column layouts) and would
+    otherwise cause :func:`_extract_row` to raise :exc:`ValueError`.
+
+    Cells that are ``None`` or contain only whitespace are treated as empty.
+    """
+
+    def _cell(key: str) -> str:
+        idx = col_map.get(key)
+        return str(row[idx]).strip() if idx is not None and idx < len(row) else ""
+
+    if "debit" in col_map or "credit" in col_map:
+        return bool(_cell("debit") or _cell("credit"))
+    return bool(_cell("amount"))
+
+
 def _extract_row(
     row: list,
     col_map: dict[str, int],
@@ -341,6 +362,18 @@ def _parse_tables(
                     # Skip opening/closing balance rows.
                     if _is_balance_row(row, col_map):
                         logger.debug("Page %d row %d: skipping balance row", page_num, row_num + 1)
+                        continue
+
+                    # Skip continuation rows that carry no monetary amount
+                    # (e.g. Barclays "Ref: xxxxxxxx" sub-rows).  These rows
+                    # have a description but empty debit/credit/amount cells
+                    # and do not represent a separate transaction.
+                    if not _row_has_amount(row, col_map):
+                        logger.debug(
+                            "Page %d row %d: skipping no-amount continuation row",
+                            page_num,
+                            row_num + 1,
+                        )
                         continue
 
                     try:

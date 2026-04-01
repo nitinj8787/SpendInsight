@@ -13,6 +13,7 @@ from app.services.pdf_parser import (
     _is_header_row,
     _parse_amount,
     _parse_date,
+    _row_has_amount,
     parse_pdf,
 )
 
@@ -597,3 +598,143 @@ def test_parse_pdf_date_carried_forward_for_continuation_rows():
 
     assert len(txns) == 2
     assert txns[1].date == txns[0].date
+
+
+# ---------------------------------------------------------------------------
+# _row_has_amount
+# ---------------------------------------------------------------------------
+
+
+def test_row_has_amount_single_column_non_empty():
+    col_map = {"date": 0, "description": 1, "amount": 2}
+    assert _row_has_amount(["2024-01-01", "Tesco", "12.50"], col_map) is True
+
+
+def test_row_has_amount_single_column_empty():
+    col_map = {"date": 0, "description": 1, "amount": 2}
+    assert _row_has_amount(["", "Ref: 12345", ""], col_map) is False
+
+
+def test_row_has_amount_debit_credit_debit_present():
+    col_map = {"date": 0, "description": 1, "debit": 2, "credit": 3}
+    assert _row_has_amount(["06 Oct", "Sky Digital", "38.00", ""], col_map) is True
+
+
+def test_row_has_amount_debit_credit_credit_present():
+    col_map = {"date": 0, "description": 1, "debit": 2, "credit": 3}
+    assert _row_has_amount(["14 Oct", "Salary", "", "2000.00"], col_map) is True
+
+
+def test_row_has_amount_debit_credit_both_empty():
+    col_map = {"date": 0, "description": 1, "debit": 2, "credit": 3}
+    assert _row_has_amount(["", "Ref: 006247495311452", "", ""], col_map) is False
+
+
+# ---------------------------------------------------------------------------
+# Barclays-style Ref sub-rows skipped during full parse
+# ---------------------------------------------------------------------------
+
+
+def test_parse_pdf_barclays_ref_rows_skipped():
+    """Ref sub-rows (no amount) must be silently skipped; transaction rows parsed."""
+    table = [
+        ["Date", "Description", "Money out", "Money in", "Balance"],
+        ["04 Oct", "Start balance", "", "", "9,629.70"],
+        ["06 Oct", "DD Direct Debit to Sky Digital", "38.00", "", ""],
+        ["", "Ref: 006247495311452", "", "", ""],
+        ["", "DD Direct Debit to Thames Water", "67.00", "", "9,524.70"],
+        ["", "Ref: 900067217429", "", "", ""],
+        ["14 Oct", "Giro Received From Danbro Employment", "", "7,726.72", "16,823.36"],
+        ["", "Ref: Danbro Employment", "", "", ""],
+    ]
+    with patch("pdfplumber.open", return_value=_mock_pdf([[table]])):
+        txns = parse_pdf(b"fake pdf")
+
+    # Start balance + three Ref rows skipped → 3 transactions
+    assert len(txns) == 3
+
+    assert txns[0].description == "DD Direct Debit to Sky Digital"
+    assert txns[0].amount == Decimal("38.00")
+    assert txns[0].type == "expense"
+    assert txns[0].date.day == 6
+
+    assert txns[1].description == "DD Direct Debit to Thames Water"
+    assert txns[1].amount == Decimal("67.00")
+    assert txns[1].type == "expense"
+    assert txns[1].date == txns[0].date  # date carried forward
+
+    assert txns[2].description == "Giro Received From Danbro Employment"
+    assert txns[2].amount == Decimal("7726.72")
+    assert txns[2].type == "income"
+    assert txns[2].date.day == 14
+
+
+def test_parse_pdf_barclays_multiline_description_ref_rows():
+    """Multi-line transactions where Ref row has no amount are skipped across dates."""
+    table = [
+        ["Date", "Description", "Money out", "Money in", "Balance"],
+        ["13 Oct", "Bill Payment to Nitin Jain", "400.00", "", "9,106.63"],
+        ["", "Ref: Nitin Monzo", "", "", ""],
+        ["14 Oct", "DD Direct Debit to Interactive Invest", "9.99", "", ""],
+        ["", "Ref: A05104971000Tdfeeo", "", "", ""],
+        ["", "This Is A New Direct Debit Payment", "", "", ""],
+    ]
+    with patch("pdfplumber.open", return_value=_mock_pdf([[table]])):
+        txns = parse_pdf(b"fake pdf")
+
+    # "This Is A New Direct Debit Payment" has no amount → skipped
+    assert len(txns) == 2
+    assert txns[0].description == "Bill Payment to Nitin Jain"
+    assert txns[0].amount == Decimal("400.00")
+    assert txns[1].description == "DD Direct Debit to Interactive Invest"
+    assert txns[1].amount == Decimal("9.99")
+
+
+def test_parse_pdf_barclays_full_statement_sample():
+    """Realistic Barclays table matching the PDF format in the bug report."""
+    table = [
+        ["Date", "Description", "Money out", "Money in", "Balance"],
+        ["04 Oct", "Start balance", "", "", "9,629.70"],
+        ["06 Oct", "DD Direct Debit to Sky Digital", "38.00", "", ""],
+        ["", "Ref: 006247495311452", "", "", ""],
+        ["", "DD Direct Debit to Thames Water", "67.00", "", "9,524.70"],
+        ["", "Ref: 900067217429", "", "", ""],
+        ["10 Oct", "DD Direct Debit to L&G Insurance MI", "18.07", "", "9,506.63"],
+        ["", "Ref: 0238539324-251010", "", "", ""],
+        ["13 Oct", "Bill Payment to Nitin Jain", "400.00", "", "9,106.63"],
+        ["", "Ref: Nitin Monzo", "", "", ""],
+        ["14 Oct", "DD Direct Debit to Interactive Invest", "9.99", "", ""],
+        ["", "Ref: A05104971000Tdfeeo", "", "", ""],
+        ["", "Giro Received From Danbro Employment", "", "7,726.72", "16,823.36"],
+        ["", "Ref: Danbro Employment", "", "", ""],
+        ["21 Oct", "DD Direct Debit to American Express", "1,741.70", "", "15,054.31"],
+        ["", "Ref: 3746-802358-81007", "", "", ""],
+    ]
+    with patch("pdfplumber.open", return_value=_mock_pdf([[table]])):
+        txns = parse_pdf(b"fake pdf")
+
+    # Start balance + 7 Ref rows skipped → 7 transactions
+    assert len(txns) == 7
+
+    descs = [t.description for t in txns]
+    assert "DD Direct Debit to Sky Digital" in descs
+    assert "DD Direct Debit to Thames Water" in descs
+    assert "DD Direct Debit to L&G Insurance MI" in descs
+    assert "Bill Payment to Nitin Jain" in descs
+    assert "DD Direct Debit to Interactive Invest" in descs
+    assert "Giro Received From Danbro Employment" in descs
+    assert "DD Direct Debit to American Express" in descs
+
+    # Verify types
+    income_txns = [t for t in txns if t.type == "income"]
+    expense_txns = [t for t in txns if t.type == "expense"]
+    assert len(income_txns) == 1
+    assert income_txns[0].description == "Giro Received From Danbro Employment"
+    assert income_txns[0].amount == Decimal("7726.72")
+    assert len(expense_txns) == 6
+
+    # Verify date carried forward within same-date group
+    sky_txn = next(t for t in txns if "Sky Digital" in t.description)
+    thames_txn = next(t for t in txns if "Thames Water" in t.description)
+    assert sky_txn.date == thames_txn.date
+    assert sky_txn.date.day == 6

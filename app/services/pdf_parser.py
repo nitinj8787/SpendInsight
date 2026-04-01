@@ -16,6 +16,7 @@ from app.services.pdf.parsers.generic import (  # noqa: F401
     _is_header_row,
     _parse_amount,
     _parse_date,
+    _row_has_amount,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "_is_header_row",
     "_parse_amount",
     "_parse_date",
+    "_row_has_amount",
 ]
