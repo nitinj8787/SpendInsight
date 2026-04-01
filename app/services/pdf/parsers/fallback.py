@@ -99,6 +99,16 @@ _BALANCE_NOISE_RE = re.compile(
 _DEBIT_SUFFIX_RE = re.compile(r"\bDR\b|\bdebit\b", re.IGNORECASE)
 _CREDIT_SUFFIX_RE = re.compile(r"\bCR\b|\bcredit\b", re.IGNORECASE)
 
+# Standalone amount line: the entire (stripped) text is a monetary amount with
+# optional currency prefix, optional sign, and at least one decimal digit.
+# Accepts either decimal amounts (25.99) or short plain integers (≤6 digits).
+_STANDALONE_AMOUNT_RE = re.compile(
+    r"^[£$€]?\s*[-+]?\s*"
+    r"(?:[\d,]+\.\d{1,2}|\d{1,6})"
+    r"\s*(?:DR|CR|debit|credit)?\s*$",
+    re.IGNORECASE,
+)
+
 
 # ---------------------------------------------------------------------------
 # Date parsing (mirrors generic parser)
@@ -357,11 +367,7 @@ class FallbackAIParser(BasePDFParser):
 
         # Check if the entire line is just an amount (decimal or short integer)
         stripped = text.strip()
-        if re.match(
-            r"^[£$€]?\s*[-+]?\s*(?:[\d,]+\.\d{1,2}|\d{1,6})\s*(?:DR|CR|debit|credit)?\s*$",
-            stripped,
-            re.IGNORECASE,
-        ):
+        if _STANDALONE_AMOUNT_RE.match(stripped):
             type_hint = None
             if _DEBIT_SUFFIX_RE.search(text):
                 type_hint = "expense"
