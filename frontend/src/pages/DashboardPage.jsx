@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react';
+import {
+  PieChart, Pie, Cell, Tooltip as PieTooltip, Legend as PieLegend, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip as LineTooltip, Legend as LineLegend,
+} from 'recharts';
 import { getAnalytics, getTransactions } from '../api/client';
 import './DashboardPage.css';
+
+const PIE_COLORS = [
+  '#6366f1', '#f59e0b', '#10b981', '#ef4444',
+  '#3b82f6', '#ec4899', '#14b8a6', '#f97316',
+];
 
 function StatCard({ label, value, colorClass }) {
   return (
@@ -82,45 +91,78 @@ export default function DashboardPage() {
           {analytics.category_breakdown.length > 0 && (
             <section className="dashboard-section">
               <h2>Spending by Category</h2>
-              <ul className="category-list">
-                {analytics.category_breakdown.map((item) => (
-                  <li key={item.category} className="category-item">
-                    <span className="category-name">{item.category}</span>
-                    <span className="category-amount">{formatCurrency(item.total)}</span>
-                  </li>
-                ))}
-              </ul>
+              <div className="chart-container">
+                <ResponsiveContainer width="100%" height={320}>
+                  <PieChart>
+                    <Pie
+                      data={analytics.category_breakdown}
+                      dataKey="total"
+                      nameKey="category"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={110}
+                      label={({ category, percent }) =>
+                        `${category} (${(percent * 100).toFixed(0)}%)`
+                      }
+                    >
+                      {analytics.category_breakdown.map((entry, index) => (
+                        <Cell
+                          key={entry.category}
+                          fill={PIE_COLORS[index % PIE_COLORS.length]}
+                        />
+                      ))}
+                    </Pie>
+                    <PieTooltip
+                      formatter={(value, name) => [formatCurrency(value), name]}
+                    />
+                    <PieLegend />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
             </section>
           )}
 
           {analytics.monthly_trends.length > 0 && (
             <section className="dashboard-section">
               <h2>Monthly Trends</h2>
-              <table className="trends-table">
-                <thead>
-                  <tr>
-                    <th>Month</th>
-                    <th>Income</th>
-                    <th>Expenses</th>
-                    <th>Net</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {analytics.monthly_trends.map((row) => {
-                    const net = parseFloat(row.income) - parseFloat(row.expenses);
-                    return (
-                      <tr key={row.month}>
-                        <td>{row.month}</td>
-                        <td className="amount-positive">{formatCurrency(row.income)}</td>
-                        <td className="amount-negative">{formatCurrency(row.expenses)}</td>
-                        <td className={net >= 0 ? 'amount-positive' : 'amount-negative'}>
-                          {formatCurrency(net)}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+              <div className="chart-container">
+                <ResponsiveContainer width="100%" height={320}>
+                  <LineChart
+                    data={analytics.monthly_trends.map((row) => ({
+                      ...row,
+                      income: parseFloat(row.income),
+                      expenses: parseFloat(row.expenses),
+                    }))}
+                    margin={{ top: 8, right: 24, left: 16, bottom: 8 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+                    <XAxis dataKey="month" tick={{ fontSize: 12 }} />
+                    <YAxis tickFormatter={(v) => `£${v}`} tick={{ fontSize: 12 }} />
+                    <LineTooltip
+                      formatter={(value, name) => [formatCurrency(value), name]}
+                    />
+                    <LineLegend />
+                    <Line
+                      type="monotone"
+                      dataKey="income"
+                      stroke="#10b981"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                      name="Income"
+                    />
+                    <Line
+                      type="monotone"
+                      dataKey="expenses"
+                      stroke="#ef4444"
+                      strokeWidth={2}
+                      dot={{ r: 4 }}
+                      activeDot={{ r: 6 }}
+                      name="Expenses"
+                    />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
             </section>
           )}
         </>
