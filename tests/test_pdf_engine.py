@@ -125,11 +125,20 @@ def test_generic_parser_source_label_stays_pdf():
     [
         (BarclaysParser, "Barclays Bank PLC — Account Statement", True),
         (BarclaysParser, "HSBC Premier Account", False),
+        # Structural detection: "Money out" + "Money in" header (Barclays-specific)
+        # This covers PDFs where the bank name appears only as a logo (not readable text).
+        (BarclaysParser, "Date Description Money out Money in Balance", True),
+        # A Barclays PDF that contains "Monzo" in a transaction ref but NOT the
+        # word "Barclays" must still be identified as Barclays (not Monzo).
+        (BarclaysParser, "Date Description Money out Money in Balance\n06 Oct Direct Debit to Sky Digital 38.00\nRef: Nitin Monzo", True),
         (AmexParser, "American Express — Platinum Card Statement", True),
         (AmexParser, "AMEX Card Services", True),
         (AmexParser, "Lloyds Current Account", False),
         (MonzoParser, "Monzo Bank Limited", True),
         (MonzoParser, "Nationwide Building Society", False),
+        # "Monzo" appearing only in a transaction reference should NOT match
+        # MonzoParser (BarclaysParser would claim the PDF first via header match).
+        (MonzoParser, "Ref: Nitin Monzo", True),  # MonzoParser alone still matches
         (WiseParser, "Wise (formerly TransferWise)", True),
         (WiseParser, "TransferWise Ltd", True),
         (WiseParser, "Starling Bank", False),
@@ -177,6 +186,34 @@ def test_factory_detects_barclays():
     with patch.object(factory, "_extract_text", return_value="Barclays Bank PLC"):
         parser = factory.detect(b"fake")
     assert isinstance(parser, BarclaysParser)
+
+
+def test_factory_detects_barclays_by_column_headers():
+    """Barclays PDFs without the word 'Barclays' are detected by column headers."""
+    factory = ParserFactory()
+    text = "Date Description Money out Money in Balance"
+    with patch.object(factory, "_extract_text", return_value=text):
+        parser = factory.detect(b"fake")
+    assert isinstance(parser, BarclaysParser)
+
+
+def test_factory_detects_barclays_not_monzo_when_ref_contains_monzo():
+    """BarclaysParser must win over MonzoParser even when a transaction ref
+    contains the word 'Monzo' — as seen in 'Ref: Nitin Monzo'."""
+    factory = ParserFactory()
+    # Simulate the extracted text from a real Barclays PDF: has "Money out"/
+    # "Money in" column headers AND a "Ref: Nitin Monzo" transaction reference.
+    text = (
+        "Your transactions\n"
+        "Date Description Money out Money in Balance\n"
+        "04 Oct Start balance 9,629.70\n"
+        "13 Oct Bill Payment to Nitin Jain 400.00\n"
+        "Ref: Nitin Monzo\n"
+    )
+    with patch.object(factory, "_extract_text", return_value=text):
+        parser = factory.detect(b"fake")
+    assert isinstance(parser, BarclaysParser)
+    assert parser.source == "barclays"
 
 
 def test_factory_detects_amex():
